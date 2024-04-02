@@ -41,6 +41,8 @@ public class Optimiser implements PlanVisitor {
      */
     List<OpAtts> buildUp = new ArrayList<>();
 
+    Estimator estimator;
+
     int noSelects;
     int noScans;
 
@@ -50,7 +52,7 @@ public class Optimiser implements PlanVisitor {
      * @param catalogue defines the relations and attributes
      */
     public Optimiser(Catalogue catalogue) {
-
+        estimator = new Estimator();
     }
 
 
@@ -183,12 +185,77 @@ public class Optimiser implements PlanVisitor {
 
 
 
+        //introduce select attr=att with joins (select+product)
+        while (!selectsListAtts.isEmpty() || buildUp.size() > 1) {
+            int cost = 1000000000;
+            Operator chosenSelect = null;
+            int chosenOne = 0;
+            int chosenTwo = 0;
+
+            //want to do a pass through all selects to choose the smallest cost one, then remove and add that.
+            // If the two attributes in the same tree, then just add select, if different, combine them with a join
+
+            //choosing the least cost select
+            for (int i = 0; i < selectsListAtts.size(); i++) {
+                Select select = selectsListAtts.get(i);
+                Attribute selectAttr1 = select.getPredicate().getLeftAttribute();
+                Attribute selectAttr2 = select.getPredicate().getRightAttribute();
+
+                int one = findOpforAtt(selectAttr1);
+                int two = findOpforAtt(selectAttr2);
+                Operator checkOp;
+                if (one==two) {
+                    checkOp = addSelect(select, buildUp.get(one).getOp());
+                } else {
+                    checkOp = addJoin(buildUp.get(one).getOp(),buildUp.get(two).getOp(),select.getPredicate());
+                }
+                checkOp.accept(estimator);
+                if(estimator.cost < cost) {
+                    cost = estimator.cost;
+                    chosenSelect = checkOp;
+                    chosenOne = one;
+                    chosenTwo = two;
+                }
+            }
+
+            //acc add the chosen select
+            if (chosenOne==chosenTwo) {
+                buildUp.remove(chosenOne);
+
+                //add new one with the same list of atts
+            } else {
+                buildUp.remove(chosenOne);
+                buildUp.remove(chosenTwo);
+
+                //add new one with combined list of atts
+            }
+
+            //buildUp.add(i, new OpAtts(newNode, opAttributes));
+
+
+            //one could equal two if that part has alreday been combined. in which case, you add the select just to the top, not doing a join.
+
+
+        }
+
+
 
 
     }
 
 
-
+    public int findOpforAtt(Attribute att) {
+        for (int i = 0; i < buildUp.size(); i++) {
+            List<Attribute> opAttributes = buildUp.get(i).getAtts();
+            for (Attribute scanAtt : opAttributes) {
+                if (scanAtt.getName().equals(att.getName())) {
+                    //found the scan with that attribute
+                   return i;
+                }
+            }
+        }
+        return -1;
+    }
 
 
 
