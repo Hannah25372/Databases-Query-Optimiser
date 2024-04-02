@@ -13,15 +13,20 @@ public class Optimiser implements PlanVisitor {
     //combine any att att selects to a product then the two scans
     // this is push select down
 
+    /**
+     * Origional canonical plan
+     */
     Operator canonicalPlan;
 
+    /**
+     * new optimised plan
+     */
     Operator newerPlan;
 
+    /**
+     * List of all operators in canonical plan
+     */
     List<Operator> allOps = new ArrayList<>();
-
-    //SELECT
-    //the operator it is applied to
-    //the predicate
 
     /**
      * List of all selects of form attr=val
@@ -39,14 +44,25 @@ public class Optimiser implements PlanVisitor {
     List<Scan> scanList = new ArrayList<>();
 
     /**
+     * List of all predicates
+     */
+    List<Predicate> preds = new ArrayList<>();
+
+    /**
+     * List of all attributes used in predicates
+     */
+    List<Attribute> atts = new ArrayList<>();
+
+    /**
      * List of plans which get built up
      */
     List<OpAtts> buildUp = new ArrayList<>();
 
+    /**
+     * Estimator used to evaluate best join ordering
+     */
     Estimator estimator;
 
-    int noSelects;
-    int noScans;
 
     /**
      * Constructor
@@ -69,8 +85,8 @@ public class Optimiser implements PlanVisitor {
 
         //contructs a list of all operators, selects, and scans, and returns number of selects and number of scans
         getOps(canonicalPlan);
-        noSelects = getSelectOps();
-        noScans = getScanOps();
+        //noSelects = getSelectOps();
+        //noScans = getScanOps();
 
         //starts the list of build up plans. just all the scans to start with
         setUpBuildUpLeaves();
@@ -133,8 +149,17 @@ public class Optimiser implements PlanVisitor {
     public void getOps(Operator plan) {
         if (plan instanceof Scan) {
             allOps.add(plan);
+            scanList.add((Scan) plan);
         } else if (plan instanceof Select) {
             allOps.add(plan);
+            preds.add(((Select)plan).getPredicate());
+            atts.add(((Select)plan).getPredicate().getLeftAttribute());
+            if (((Select)plan).getPredicate().equalsValue()) {
+                selectsListVal.add((Select) plan);
+            } else {
+                selectsListAtts.add((Select) plan);
+                atts.add(((Select)plan).getPredicate().getRightAttribute());
+            }
             getOps(((Select) plan).getInput());
         } else if (plan instanceof Product) {
             allOps.add(plan);
@@ -142,9 +167,13 @@ public class Optimiser implements PlanVisitor {
             getOps(((Product) plan).getRight());
         } else if (plan instanceof Project) {
             allOps.add(plan);
+            atts.addAll(((Project)plan).getAttributes());
             getOps(((Project) plan).getInput());
         } else if (plan instanceof Join) {
             allOps.add(plan);
+            preds.add(((Join)plan).getPredicate());
+            atts.add(((Join)plan).getPredicate().getLeftAttribute());
+            atts.add(((Join)plan).getPredicate().getRightAttribute());
             getOps(((Join) plan).getLeft());
             getOps(((Join) plan).getRight());
         }
@@ -154,7 +183,7 @@ public class Optimiser implements PlanVisitor {
     //make new scans and put in op att list
 
     /**
-     * generates new operations for all the scans and puts them in the OpAtt list to build plans
+     * generates new operations for all the scans and puts them in the buildUp'OpAtt' list to build plans
      */
     public void setUpBuildUpLeaves() {
         for (Scan scan : scanList ) {
@@ -162,6 +191,11 @@ public class Optimiser implements PlanVisitor {
         }
     }
 
+    /**
+     * Method which handles fully rebuilding the tree from the bottom up, creating new operations.
+     * Builds tree with the idea of, push selects down, introduce joins in place of product selects, reordering joins
+     * Results in an optimised plan
+     */
     public void pushSelectsDownIntroJoinsAndDetermineOrder() {
 
 
@@ -285,6 +319,10 @@ public class Optimiser implements PlanVisitor {
 
     }
 
+
+    /**
+     * Method which handles adding projects to the plan in the relevant places
+     */
     public void addProjectsAndPushDown() {
         Operator newPlan = addProject(getTopProjectAtts(), newerPlan);
 
@@ -303,6 +341,11 @@ public class Optimiser implements PlanVisitor {
         }
     }
 
+
+    /**
+     * Finds tree snippet in buildUp with the smallest cost via use of estimator
+     * @return index of tree in buildUp
+     */
     public int smallestTupleCount(){
         int smallest = 1000000000;
         int small = 0;
@@ -317,6 +360,11 @@ public class Optimiser implements PlanVisitor {
         return small;
     }
 
+    /**
+     * returns the Operation which contains the scan which has the attribute in question
+     * @param att attribute searching for
+     * @return index of buildUp of the operation containing the scan which contains the attribute
+     */
     public int findOpforAtt(Attribute att) {
         for (int i = 0; i < buildUp.size(); i++) {
             List<Attribute> opAttributes = buildUp.get(i).getAtts();
@@ -334,6 +382,11 @@ public class Optimiser implements PlanVisitor {
 
     //rebuild new tree
 
+    /**
+     * Construct new scan from old scan
+     * @param scan old scan
+     * @return new scan
+     */
     public Scan buildNewScan(Scan scan) {
         //build new relation with attributes
         NamedRelation newRelation = new NamedRelation(scan.getRelation().toString(), scan.getRelation().getTupleCount());
@@ -351,6 +404,12 @@ public class Optimiser implements PlanVisitor {
         return newScan;
     }
 
+    /**
+     * Construct new select from old select
+     * @param select old select
+     * @param op operator select applied to
+     * @return new select
+     */
     public Operator addSelect(Select select, Operator op) {
         //build new predicate
         Predicate pred = select.getPredicate();
@@ -369,11 +428,23 @@ public class Optimiser implements PlanVisitor {
         return newSelect;
     }
 
+    /**
+     * Consruct new product
+     * @param left left operator product applied to
+     * @param right right operator product applied to
+     * @return new product
+     */
     public Operator addProduct(Operator left, Operator right) {
 
         return new Product(left,right);
     }
 
+    /**
+     * Construct new project
+     * @param atts list of old atts project uses
+     * @param op operator project applied to
+     * @return new project
+     */
     public Operator addProject(List<Attribute> atts, Operator op) {
 
         List<Attribute> newAttributes = new ArrayList<>();
@@ -386,6 +457,13 @@ public class Optimiser implements PlanVisitor {
         return project;
     }
 
+    /**
+     * Construct new join
+     * @param left left operator product applied to
+     * @param right right operator product applied to
+     * @param pred old predicate used for join
+     * @return new join
+     */
     public Operator addJoin(Operator left, Operator right, Predicate pred) {
         Predicate newPred;
         if(pred.equalsValue()){
