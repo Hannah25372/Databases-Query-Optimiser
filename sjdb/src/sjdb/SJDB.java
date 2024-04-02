@@ -94,6 +94,7 @@ public class SJDB {
 
 		ArrayList<Attribute> atts = new ArrayList<Attribute>();
 		atts.add(new Attribute("a2"));
+
 		Project pj1 = new Project(s2, atts);
 
 

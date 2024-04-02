@@ -1,12 +1,14 @@
 package sjdb;
 
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Set;
 
 public class Optimiser implements PlanVisitor {
 
 
-    // make list of operators
+    //make list of operators
     //make list of selects
     //make lists of 'scans'
     //combine any val selects to the scan
@@ -22,6 +24,12 @@ public class Optimiser implements PlanVisitor {
      * new optimised plan
      */
     Operator newerPlan;
+
+    /**
+     * true if canonical from begins with project
+     * if no project, will be none elsewhere in the tree
+     */
+    boolean topProject = false;
 
     /**
      * List of all operators in canonical plan
@@ -51,7 +59,13 @@ public class Optimiser implements PlanVisitor {
     /**
      * List of all attributes used in predicates
      */
-    List<Attribute> atts = new ArrayList<>();
+    //List<Attribute> atts = new ArrayList<>();
+
+    /**
+     * Set of all attributes used in predicates
+     * So each only appears once
+      */
+    Set<Attribute> attsSet = new HashSet<>();
 
     /**
      * List of plans which get built up
@@ -83,10 +97,13 @@ public class Optimiser implements PlanVisitor {
     public Operator optimise(Operator plan) {
         canonicalPlan = plan;
 
-        //contructs a list of all operators, selects, and scans, and returns number of selects and number of scans
+        //constructs a list of all operators, selects(att=val), selects(att=att), scans, predicates, and attributes in predicates
         getOps(canonicalPlan);
-        //noSelects = getSelectOps();
-        //noScans = getScanOps();
+
+        //if begins with project
+        if (canonicalPlan instanceof Project) {
+            topProject = true;
+        }
 
         //starts the list of build up plans. just all the scans to start with
         setUpBuildUpLeaves();
@@ -106,42 +123,6 @@ public class Optimiser implements PlanVisitor {
         return newerPlan;
     }
 
-
-    /**
-     * Constructs a list of all selects from canonical plan
-     * @return no. selects in canonical plan
-     */
-    public int getSelectOps() {
-        int num = 0;
-        for (Operator op : allOps) {
-            if (op instanceof Select) {
-                if (((Select) op).getPredicate().equalsValue()) {
-                    selectsListVal.add((Select) op);
-                } else {
-                    selectsListAtts.add((Select) op);
-                }
-                num++;
-            }
-        }
-        return num;
-    }
-
-    /**
-     * Constructs a list of all scans from canonical plan
-     * @return no. scans in canonical plan
-     */
-    public int getScanOps() {
-        int num = 0;
-        for (Operator op : allOps) {
-            if (op instanceof Scan) {
-                scanList.add((Scan) op);
-                num++;
-            }
-        }
-        return num;
-    }
-
-
     /**
      * Gets all operators from canonical plan into a list
      * @param plan the canonical plan
@@ -153,12 +134,12 @@ public class Optimiser implements PlanVisitor {
         } else if (plan instanceof Select) {
             allOps.add(plan);
             preds.add(((Select)plan).getPredicate());
-            atts.add(((Select)plan).getPredicate().getLeftAttribute());
+            attsSet.add(((Select)plan).getPredicate().getLeftAttribute());
             if (((Select)plan).getPredicate().equalsValue()) {
                 selectsListVal.add((Select) plan);
             } else {
                 selectsListAtts.add((Select) plan);
-                atts.add(((Select)plan).getPredicate().getRightAttribute());
+                attsSet.add(((Select)plan).getPredicate().getRightAttribute());
             }
             getOps(((Select) plan).getInput());
         } else if (plan instanceof Product) {
@@ -167,20 +148,18 @@ public class Optimiser implements PlanVisitor {
             getOps(((Product) plan).getRight());
         } else if (plan instanceof Project) {
             allOps.add(plan);
-            atts.addAll(((Project)plan).getAttributes());
+            attsSet.addAll(((Project)plan).getAttributes());
             getOps(((Project) plan).getInput());
         } else if (plan instanceof Join) {
             allOps.add(plan);
             preds.add(((Join)plan).getPredicate());
-            atts.add(((Join)plan).getPredicate().getLeftAttribute());
-            atts.add(((Join)plan).getPredicate().getRightAttribute());
+            attsSet.add(((Join)plan).getPredicate().getLeftAttribute());
+            attsSet.add(((Join)plan).getPredicate().getRightAttribute());
             getOps(((Join) plan).getLeft());
             getOps(((Join) plan).getRight());
         }
     }
 
-
-    //make new scans and put in op att list
 
     /**
      * generates new operations for all the scans and puts them in the buildUp'OpAtt' list to build plans
@@ -214,10 +193,32 @@ public class Optimiser implements PlanVisitor {
                     if (scanAtt.getName().equals(selectAttribute.getName())) {
 
                         //found the scan with that attribute
-                        Operator newNode = addSelect(select, op);
+                        Operator newOp = addSelect(select, op);
+
+
+                        //TODO:
+                        //check if want a project above this
+                        // attsInSubTree:  opAttributes
+                        // global atts:    attsSet
+                        if (topProject) {
+                            List<Attribute> potentialProjectAtts = new ArrayList<>();
+                            for (var attST : opAttributes) {
+                                for (var attG : attsSet) {
+                                    if (attG.getName().equals(attST.getName())) {
+                                        potentialProjectAtts.add(attST);
+                                    }
+                                }
+                            }
+                            if (potentialProjectAtts.size() < opAttributes.size()) {
+                                //add the project
+                                newOp = addProject(potentialProjectAtts, newOp);
+                            }
+                        }
+
                         buildUp.remove(i);
-                        buildUp.add(i, new OpAtts(newNode, opAttributes));
+                        buildUp.add(i, new OpAtts(newOp, opAttributes));
                         completedSelect = true;
+
                         break;
                     }
                 }
@@ -270,13 +271,59 @@ public class Optimiser implements PlanVisitor {
             if (chosenOne==chosenTwo) {
                 List<Attribute> opAttributes = buildUp.get(chosenOne).getAtts();
                 buildUp.remove(chosenOne);
+
+                //TODO:
+                //check if want a project above this
+                // attsInSubTree:  opAttributes
+                // global atts:    attsSet
+                if (topProject) {
+                    List<Attribute> potentialProjectAtts = new ArrayList<>();
+                    for (var attST : opAttributes) {
+                        for (var attG : attsSet) {
+                            if (attG.getName().equals(attST.getName())) {
+                                potentialProjectAtts.add(attST);
+                            }
+                        }
+                    }
+                    if (potentialProjectAtts.size() < opAttributes.size()) {
+                        //add the project
+                        newOp = addProject(potentialProjectAtts, newOp);
+                    }
+                }
+
+
                 buildUp.add(new OpAtts(newOp, opAttributes));
+
+
             } else {
                 List<Attribute> opAttributes = buildUp.get(chosenOne).getAtts();
                 opAttributes.addAll(buildUp.get(chosenTwo).getAtts());
                 buildUp.remove(chosenOne);
                 buildUp.remove(chosenTwo);
+
+
+                //TODO:
+                //check if want a project above this
+                // attsInSubTree:  opAttributes
+                // global atts:    attsSet
+                if (topProject) {
+                    List<Attribute> potentialProjectAtts = new ArrayList<>();
+                    for (var attST : opAttributes) {
+                        for (var attG : attsSet) {
+                            if (attG.getName().equals(attST.getName())) {
+                                potentialProjectAtts.add(attST);
+                            }
+                        }
+                    }
+                    if (potentialProjectAtts.size() < opAttributes.size()) {
+                        //add the project
+                        newOp = addProject(potentialProjectAtts, newOp);
+                    }
+                }
+
                 buildUp.add(new OpAtts(newOp, opAttributes));
+
+
             }
 
         }
@@ -301,17 +348,64 @@ public class Optimiser implements PlanVisitor {
             OpAtts second = buildUp.get(secondIndex);
             buildUp.remove(secondIndex);
             Operator newOp = addProduct(first.getOp(), second.getOp());
-            List<Attribute> atts = first.getAtts();
-            atts.addAll(second.getAtts());
-            buildUp.add(new OpAtts(newOp, atts));
+            List<Attribute> opAttributes = first.getAtts();
+            opAttributes.addAll(second.getAtts());
+
+
+            //TODO:
+            //check if want a project above this
+            // attsInSubTree:  opAttributes
+            // global atts:    attsSet
+            if (topProject) {
+                List<Attribute> potentialProjectAtts = new ArrayList<>();
+                for (var attST : opAttributes) {
+                    for (var attG : attsSet) {
+                        if (attG.getName().equals(attST.getName())) {
+                            potentialProjectAtts.add(attST);
+                        }
+                    }
+                }
+                if (potentialProjectAtts.size() < opAttributes.size()) {
+                    //add the project
+                    newOp = addProject(potentialProjectAtts, newOp);
+                }
+            }
+
+            buildUp.add(new OpAtts(newOp, opAttributes));
+
+
         }
         //add any last selects to the top
         while (!selectsListAtts.isEmpty()) {
             Select select = selectsListAtts.removeFirst();
             Operator newOp = addSelect(select, buildUp.getFirst().getOp());
-            OpAtts newOpAtts = new OpAtts(newOp, buildUp.getFirst().getAtts());
+            List<Attribute> opAttributes = buildUp.getFirst().getAtts();
+
+
+            //TODO:
+            //check if want a project above this
+            // attsInSubTree:  opAttributes
+            // global atts:    attsSet
+            if (topProject) {
+                List<Attribute> potentialProjectAtts = new ArrayList<>();
+                for (var attST : opAttributes) {
+                    for (var attG : attsSet) {
+                        if (attG.getName().equals(attST.getName())) {
+                            potentialProjectAtts.add(attST);
+                        }
+                    }
+                }
+                if (potentialProjectAtts.size() < opAttributes.size()) {
+                    //add the project
+                    newOp = addProject(potentialProjectAtts, newOp);
+                }
+            }
+
+            OpAtts newOpAtts = new OpAtts(newOp, opAttributes);
             buildUp.removeFirst();
             buildUp.add(newOpAtts);
+
+
         }
 
         newerPlan = buildUp.getFirst().getOp();
@@ -324,9 +418,11 @@ public class Optimiser implements PlanVisitor {
      * Method which handles adding projects to the plan in the relevant places
      */
     public void addProjectsAndPushDown() {
-        Operator newPlan = addProject(getTopProjectAtts(), newerPlan);
 
-        System.out.println(newPlan);
+        if (topProject) {
+            newerPlan = addProject(getTopProjectAtts(), newerPlan);
+        }
+        System.out.println(newerPlan);
     }
 
     /**
@@ -335,8 +431,10 @@ public class Optimiser implements PlanVisitor {
      */
     public List<Attribute> getTopProjectAtts(){
         if (canonicalPlan instanceof Project) {
+            //atts in project
             return ((Project) canonicalPlan).getAttributes();
         } else {
+            //all atts in plan
             return buildUp.getFirst().getAtts();
         }
     }
@@ -379,8 +477,6 @@ public class Optimiser implements PlanVisitor {
     }
 
 
-
-    //rebuild new tree
 
     /**
      * Construct new scan from old scan
