@@ -15,6 +15,8 @@ public class Optimiser implements PlanVisitor {
 
     Operator canonicalPlan;
 
+    Operator newerPlan;
+
     List<Operator> allOps = new ArrayList<>();
 
     //SELECT
@@ -74,13 +76,18 @@ public class Optimiser implements PlanVisitor {
         setUpBuildUpLeaves();
 
         //make buildUp into a list of scans and select scans, using the select val
-        pushSelectsDown();
+        pushSelectsDownIntroJoinsAndDetermineOrder();
 
+
+        System.out.println("printing build up list");
         for (var item : buildUp) {
             System.out.println(item.getOp() + " " + item.getAtts());
         }
 
-        return null;
+
+        addProjectsAndPushDown();
+
+        return newerPlan;
     }
 
 
@@ -118,6 +125,7 @@ public class Optimiser implements PlanVisitor {
         return num;
     }
 
+
     /**
      * Gets all operators from canonical plan into a list
      * @param plan the canonical plan
@@ -154,7 +162,7 @@ public class Optimiser implements PlanVisitor {
         }
     }
 
-    public void pushSelectsDown() {
+    public void pushSelectsDownIntroJoinsAndDetermineOrder() {
 
 
 
@@ -186,17 +194,20 @@ public class Optimiser implements PlanVisitor {
 
 
         //introduce select attr=att with joins (select+product)
-        while (!selectsListAtts.isEmpty() || buildUp.size() > 1) {
+        while (!selectsListAtts.isEmpty() && buildUp.size() > 1) {
             int cost = 1000000000;
-            Operator chosenSelect = null;
+            Select chosenSelect = null;
+            Operator newOp = null;
             int chosenOne = 0;
             int chosenTwo = 0;
 
-            //want to do a pass through all selects to choose the smallest cost one, then remove and add that.
+            // want to do a pass through all selects to choose the smallest cost one, then remove and add that.
             // If the two attributes in the same tree, then just add select, if different, combine them with a join
+            // One could equal Two if that part has already been combined. in which case, you add the select just to the top, not doing a join.
 
-            //choosing the least cost select
+            //choosing the least cost select attr=attr to add from the list
             for (int i = 0; i < selectsListAtts.size(); i++) {
+                //System.out.println(i);
                 Select select = selectsListAtts.get(i);
                 Attribute selectAttr1 = select.getPredicate().getLeftAttribute();
                 Attribute selectAttr2 = select.getPredicate().getRightAttribute();
@@ -209,40 +220,102 @@ public class Optimiser implements PlanVisitor {
                 } else {
                     checkOp = addJoin(buildUp.get(one).getOp(),buildUp.get(two).getOp(),select.getPredicate());
                 }
+                //System.out.println(checkOp);
                 checkOp.accept(estimator);
                 if(estimator.cost < cost) {
                     cost = estimator.cost;
-                    chosenSelect = checkOp;
+                    newOp = checkOp;
                     chosenOne = one;
                     chosenTwo = two;
+                    chosenSelect = select;
                 }
             }
 
             //acc add the chosen select
+            selectsListAtts.remove(chosenSelect);
             if (chosenOne==chosenTwo) {
+                List<Attribute> opAttributes = buildUp.get(chosenOne).getAtts();
                 buildUp.remove(chosenOne);
-
-                //add new one with the same list of atts
+                buildUp.add(new OpAtts(newOp, opAttributes));
             } else {
+                List<Attribute> opAttributes = buildUp.get(chosenOne).getAtts();
+                opAttributes.addAll(buildUp.get(chosenTwo).getAtts());
                 buildUp.remove(chosenOne);
                 buildUp.remove(chosenTwo);
-
-                //add new one with combined list of atts
+                buildUp.add(new OpAtts(newOp, opAttributes));
             }
-
-            //buildUp.add(i, new OpAtts(newNode, opAttributes));
-
-
-            //one could equal two if that part has alreday been combined. in which case, you add the select just to the top, not doing a join.
-
 
         }
 
 
 
+        if (selectsListAtts.isEmpty()) {
+            System.out.println("Used all select attr=attr");
+        }
+        if (!(buildUp.size() > 1)) {
+            System.out.println("one plan in list left");
+        }
+
+
+
+        //join any last trees by a product
+        while ((buildUp.size() > 1)) {
+            int firstIndex = smallestTupleCount();
+            OpAtts first = buildUp.get(firstIndex);
+            buildUp.remove(firstIndex);
+            int secondIndex = smallestTupleCount();
+            OpAtts second = buildUp.get(secondIndex);
+            buildUp.remove(secondIndex);
+            Operator newOp = addProduct(first.getOp(), second.getOp());
+            List<Attribute> atts = first.getAtts();
+            atts.addAll(second.getAtts());
+            buildUp.add(new OpAtts(newOp, atts));
+        }
+        //add any last selects to the top
+        while (!selectsListAtts.isEmpty()) {
+            Select select = selectsListAtts.removeFirst();
+            Operator newOp = addSelect(select, buildUp.getFirst().getOp());
+            OpAtts newOpAtts = new OpAtts(newOp, buildUp.getFirst().getAtts());
+            buildUp.removeFirst();
+            buildUp.add(newOpAtts);
+        }
+
+        newerPlan = buildUp.getFirst().getOp();
+
 
     }
 
+    public void addProjectsAndPushDown() {
+        Operator newPlan = addProject(getTopProjectAtts(), newerPlan);
+
+        System.out.println(newPlan);
+    }
+
+    /**
+     * Gets the project at the top of the canonical form if there is one, if not projects all attributes in plan
+     * @return list of attributes for the top project
+     */
+    public List<Attribute> getTopProjectAtts(){
+        if (canonicalPlan instanceof Project) {
+            return ((Project) canonicalPlan).getAttributes();
+        } else {
+            return buildUp.getFirst().getAtts();
+        }
+    }
+
+    public int smallestTupleCount(){
+        int smallest = 1000000000;
+        int small = 0;
+        Estimator est = new Estimator();
+        for (int i = 0; i < buildUp.size(); i++) {
+            buildUp.get(i).getOp().accept(est);
+            if (est.cost < smallest) {
+                smallest = est.cost;
+                small = i;
+            }
+        }
+        return small;
+    }
 
     public int findOpforAtt(Attribute att) {
         for (int i = 0; i < buildUp.size(); i++) {
@@ -301,7 +374,7 @@ public class Optimiser implements PlanVisitor {
         return new Product(left,right);
     }
 
-    public Operator addProject(ArrayList<Attribute> atts, Operator op) {
+    public Operator addProject(List<Attribute> atts, Operator op) {
 
         List<Attribute> newAttributes = new ArrayList<>();
         for (Attribute att : atts) {
@@ -323,49 +396,6 @@ public class Optimiser implements PlanVisitor {
 
         return new Join(left,right,newPred);
     }
-
-        /*
-            A selection of the form attr=val can be pushed down to just above the
-            relation that contains attr
-
-            A selection of the form attr1=attr2 can be pushed down to the product above
-            the subtree containing the relations that contain attr1 and attr2
-        */
-
-        /*
-        Ideas
-
-        for att=val
-        get the select to be pushed down
-        get the scan it is pushed to
-        push it
-
-        for att=att
-        get the select to be pushed down
-        get the product above two scans it is pushed to
-        push it
-
-
-        rebuild
-
-        do i recreate from here? well all the projects will be at the top, so
-        i could make a series of select scans
-
-
-
-        store that there is a select on this relation.
-        when I go through and rebuild, add in that select
-
-         */
-
-
-
-
-
-
-
-
-
 
 
 

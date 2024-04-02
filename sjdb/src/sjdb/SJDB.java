@@ -90,7 +90,7 @@ public class SJDB {
 		Product p2 = new Product(p1,c);
 
 		Select s1 = new Select(p2,new Predicate(new Attribute("b1"),"2"));
-		Select s2 = new Select(s1,new Predicate(new Attribute("c1"),new Attribute("c1")));
+		Select s2 = new Select(s1,new Predicate(new Attribute("c1"),new Attribute("a1")));
 
 		ArrayList<Attribute> atts = new ArrayList<Attribute>();
 		atts.add(new Attribute("a2"));
