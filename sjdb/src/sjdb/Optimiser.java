@@ -78,7 +78,7 @@ public class Optimiser implements PlanVisitor {
      * @param catalogue defines the relations and attributes
      */
     public Optimiser(Catalogue catalogue) {
-        estimator = new Estimator();
+
     }
 
 
@@ -89,12 +89,15 @@ public class Optimiser implements PlanVisitor {
      * @return a new optimised plan
      */
     public Operator optimise(Operator plan) {
+        estimator = new Estimator();
+
         canonicalPlan = plan;
 
         //constructs a list of all operators, selects(att=val), selects(att=att), scans, predicates, and attributes in predicates
         getOps(canonicalPlan);
 
         //if begins with project
+        //only add projects throughout if you project atts at top, otherwise you want the whole thing
         if (canonicalPlan instanceof Project) {
             topProject = true;
         }
@@ -106,13 +109,7 @@ public class Optimiser implements PlanVisitor {
         pushSelectsDownIntroJoinsAndDetermineOrder();
 
 
-        System.out.println("printing build up list");
-        for (var item : buildUp) {
-            System.out.println(item.getOp() + " " + item.getAtts());
-        }
 
-
-        //addProjectsAndPushDown();
         System.out.println(newerPlan);
 
         return newerPlan;
@@ -284,6 +281,7 @@ public class Optimiser implements PlanVisitor {
                     checkOp = addJoin(buildUp.get(one).getOp(),buildUp.get(two).getOp(),select.getPredicate());
                 }
                 //System.out.println(checkOp);
+                estimator = new Estimator();
                 checkOp.accept(estimator);
                 if(estimator.cost < cost) {
                     cost = estimator.cost;
@@ -368,14 +366,14 @@ public class Optimiser implements PlanVisitor {
         }
 
 
-
+/*
         if (selectsListAtts.isEmpty()) {
             System.out.println("Used all select attr=attr");
         }
         if (!(buildUp.size() > 1)) {
             System.out.println("one plan in list left");
         }
-
+*/
 
 
         //join any last trees by a product
@@ -425,7 +423,7 @@ public class Optimiser implements PlanVisitor {
             Operator newOp = addSelect(select, buildUp.getFirst().getOp());
             List<Attribute> opAttributes = buildUp.getFirst().getAtts();
 
-           
+
             //remove predAtt from list
             predAtts.remove(select.getPredicate().getLeftAttribute());
             predAtts.remove(select.getPredicate().getRightAttribute());
@@ -466,30 +464,7 @@ public class Optimiser implements PlanVisitor {
     }
 
 
-    /**
-     * Method which handles adding projects to the plan in the relevant places
-     */
-    public void addProjectsAndPushDown() {
 
-        if (topProject) {
-            newerPlan = addProject(getTopProjectAtts(), newerPlan);
-        }
-        System.out.println(newerPlan);
-    }
-
-    /**
-     * Gets the project at the top of the canonical form if there is one, if not projects all attributes in plan
-     * @return list of attributes for the top project
-     */
-    public List<Attribute> getTopProjectAtts(){
-        if (canonicalPlan instanceof Project) {
-            //atts in project
-            return ((Project) canonicalPlan).getAttributes();
-        } else {
-            //all atts in plan
-            return buildUp.getFirst().getAtts();
-        }
-    }
 
 
     /**
@@ -499,8 +474,8 @@ public class Optimiser implements PlanVisitor {
     public int smallestTupleCount(){
         int smallest = 1000000000;
         int small = 0;
-        Estimator est = new Estimator();
         for (int i = 0; i < buildUp.size(); i++) {
+            Estimator est = new Estimator();
             buildUp.get(i).getOp().accept(est);
             if (est.cost < smallest) {
                 smallest = est.cost;

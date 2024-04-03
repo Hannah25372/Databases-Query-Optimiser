@@ -29,7 +29,7 @@ public class SJDB {
 
 
 
-		Operator plan = makePlan();
+		Operator plan = makeCanonicalPlan();
 
 		Estimator est = new Estimator();
 		Inspector ins = new Inspector();
@@ -40,7 +40,12 @@ public class SJDB {
 		// create optimised plan
 		System.out.println("Optimiser");
 		Optimiser opt = new Optimiser(null);
-		Operator optPlan = opt.optimise(makeCanonicalPlan());
+		Estimator est2 = new Estimator();
+		Operator optPlan = opt.optimise(plan);
+		optPlan.accept(est2);
+		System.out.println("Estimated cost: " + est2.cost);
+		optPlan.accept(ins);
+
 	}
 
 
