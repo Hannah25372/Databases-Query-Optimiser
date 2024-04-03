@@ -29,7 +29,7 @@ public class SJDB {
 
 
 
-		Operator plan = makeCanonicalPlan();
+		Operator plan = testPlan2();
 
 		Estimator est = new Estimator();
 		Inspector ins = new Inspector();
@@ -106,4 +106,32 @@ public class SJDB {
 
 		return pj1;
 	}
+
+
+	public static Operator testPlan2() {
+		NamedRelation r1 = new NamedRelation("A",3);
+		NamedRelation r2 = new NamedRelation("B",3);
+		r1.addAttribute(new Attribute("a1",3));
+		r1.addAttribute(new Attribute("a2",3));
+		r2.addAttribute(new Attribute("b1",3));
+		r2.addAttribute(new Attribute("b2",3));
+
+		Scan a = new Scan(r1);
+		Scan b = new Scan(r2);
+
+		Product p1 = new Product(a,b);
+
+		Select s1 = new Select(p1,new Predicate(new Attribute("b2"),new Attribute("a1")));
+		Select s2 = new Select(s1,new Predicate(new Attribute("b2"),new Attribute("a1")));
+
+		ArrayList<Attribute> atts = new ArrayList<Attribute>();
+		atts.add(new Attribute("a1"));
+
+		Project pj1 = new Project(s2, atts);
+
+
+
+		return pj1;
+	}
+
 }

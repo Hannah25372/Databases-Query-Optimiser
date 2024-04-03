@@ -4,12 +4,17 @@ import java.util.List;
 import java.util.ArrayList;
 import java.util.Iterator;
 
+/**
+ * Need new estimator for each plan you cal it on if you want to use the cost variable, since otherwise it keeps counting up cumulatively
+ */
 public class Estimator implements PlanVisitor {
 
 
 	int cost;
+
 	public Estimator() {
 		// empty constructor
+		cost = 0;
 	}
 
 	/* 

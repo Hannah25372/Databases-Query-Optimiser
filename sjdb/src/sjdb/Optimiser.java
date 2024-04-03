@@ -186,7 +186,10 @@ public class Optimiser implements PlanVisitor {
                         Operator newOp = addSelect(select, op);
 
                         //remove predAtt from list
+                        System.out.println("1");
+                        System.out.println(predAtts);
                         predAtts.remove(selectAttribute);
+                        System.out.println(predAtts);
 
                         //check if you want a project above this
                         newOp = tryAddingProject(opAttributes,newOp);
@@ -248,8 +251,12 @@ public class Optimiser implements PlanVisitor {
                 buildUp.remove(chosenOne);
 
                 //remove predAtt from list
+                System.out.println("2");
+                System.out.println(predAtts);
                 predAtts.remove(chosenSelect.getPredicate().getLeftAttribute());
+                System.out.println(predAtts);
                 predAtts.remove(chosenSelect.getPredicate().getRightAttribute());
+                System.out.println(predAtts);
 
                 //check if want a project above this
                 newOp = tryAddingProject(opAttributes,newOp);
@@ -259,12 +266,24 @@ public class Optimiser implements PlanVisitor {
             } else {
                 List<Attribute> opAttributes = buildUp.get(chosenOne).getAtts();
                 opAttributes.addAll(buildUp.get(chosenTwo).getAtts());
-                buildUp.remove(chosenOne);
-                buildUp.remove(chosenTwo);
+
+                //removal via index, must do the larger one first
+                if(chosenOne > chosenTwo) {
+                    buildUp.remove(chosenOne);
+                    buildUp.remove(chosenTwo);
+                } else {
+                    buildUp.remove(chosenTwo);
+                    buildUp.remove(chosenOne);
+                }
+
 
                 //remove predAtt from list
+                System.out.println("3");
+                System.out.println(predAtts);
                 predAtts.remove(chosenSelect.getPredicate().getLeftAttribute());
+                System.out.println(predAtts);
                 predAtts.remove(chosenSelect.getPredicate().getRightAttribute());
+                System.out.println(predAtts);
 
                 //check if want a project above this
                 newOp = tryAddingProject(opAttributes,newOp);
@@ -313,8 +332,12 @@ public class Optimiser implements PlanVisitor {
             List<Attribute> opAttributes = buildUp.getFirst().getAtts();
 
             //try remove predAtt from list
+            System.out.println("4");
+            System.out.println(predAtts);
             predAtts.remove(select.getPredicate().getLeftAttribute());
+            System.out.println(predAtts);
             predAtts.remove(select.getPredicate().getRightAttribute());
+            System.out.println(predAtts);
 
             //check if want a project above this
             newOp = tryAddingProject(opAttributes,newOp);

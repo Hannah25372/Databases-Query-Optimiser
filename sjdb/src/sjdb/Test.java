@@ -19,9 +19,10 @@ public class Test {
 		plan.accept(estimator);
 		plan.accept(inspector);
 
+		Estimator estimator2 = new Estimator();
 		Optimiser optimiser = new Optimiser(catalogue);
 		Operator planopt = optimiser.optimise(plan);
-		planopt.accept(estimator);
+		planopt.accept(estimator2);
 		planopt.accept(inspector);
 	}
 	
