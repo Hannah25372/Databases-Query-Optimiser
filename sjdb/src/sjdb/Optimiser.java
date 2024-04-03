@@ -59,13 +59,7 @@ public class Optimiser implements PlanVisitor {
     /**
      * List of all attributes used in predicates
      */
-    //List<Attribute> atts = new ArrayList<>();
-
-    /**
-     * Set of all attributes used in predicates
-     * So each only appears once
-      */
-    Set<Attribute> attsSet = new HashSet<>();
+    List<Attribute> predAtts = new ArrayList<>();
 
     /**
      * List of plans which get built up
@@ -118,7 +112,8 @@ public class Optimiser implements PlanVisitor {
         }
 
 
-        addProjectsAndPushDown();
+        //addProjectsAndPushDown();
+        System.out.println(newerPlan);
 
         return newerPlan;
     }
@@ -134,12 +129,12 @@ public class Optimiser implements PlanVisitor {
         } else if (plan instanceof Select) {
             allOps.add(plan);
             preds.add(((Select)plan).getPredicate());
-            attsSet.add(((Select)plan).getPredicate().getLeftAttribute());
+            predAtts.add(((Select)plan).getPredicate().getLeftAttribute());
             if (((Select)plan).getPredicate().equalsValue()) {
                 selectsListVal.add((Select) plan);
             } else {
                 selectsListAtts.add((Select) plan);
-                attsSet.add(((Select)plan).getPredicate().getRightAttribute());
+                predAtts.add(((Select)plan).getPredicate().getRightAttribute());
             }
             getOps(((Select) plan).getInput());
         } else if (plan instanceof Product) {
@@ -148,13 +143,13 @@ public class Optimiser implements PlanVisitor {
             getOps(((Product) plan).getRight());
         } else if (plan instanceof Project) {
             allOps.add(plan);
-            attsSet.addAll(((Project)plan).getAttributes());
+            predAtts.addAll(((Project)plan).getAttributes());
             getOps(((Project) plan).getInput());
         } else if (plan instanceof Join) {
             allOps.add(plan);
             preds.add(((Join)plan).getPredicate());
-            attsSet.add(((Join)plan).getPredicate().getLeftAttribute());
-            attsSet.add(((Join)plan).getPredicate().getRightAttribute());
+            predAtts.add(((Join)plan).getPredicate().getLeftAttribute());
+            predAtts.add(((Join)plan).getPredicate().getRightAttribute());
             getOps(((Join) plan).getLeft());
             getOps(((Join) plan).getRight());
         }
@@ -166,7 +161,35 @@ public class Optimiser implements PlanVisitor {
      */
     public void setUpBuildUpLeaves() {
         for (Scan scan : scanList ) {
-            buildUp.add(new OpAtts(buildNewScan(scan), scan.getRelation().getAttributes()));
+
+            List<Attribute> opAttributes = scan.getRelation().getAttributes();
+            Operator newOp = buildNewScan(scan);
+
+            //do not need to remove predAtts here as only adding a scan
+
+            //TODO:
+            //check if want a project above this
+            // attsInSubTree:  opAttributes
+            // global atts:    predAtts
+            if (topProject) {
+                //List<Attribute> potentialProjectAtts = new ArrayList<>();
+                //add attributes in predicates
+                Set<Attribute> potentialProjectAttsSet = new HashSet<>();
+                for (var attST : opAttributes) {
+                    for (var attG : predAtts) {
+                        if (attG.getName().equals(attST.getName())) {
+                            potentialProjectAttsSet.add(attST);
+                        }
+                    }
+                }
+                if (potentialProjectAttsSet.size() < opAttributes.size()) {
+                    //add the project
+                    newOp = addProject(potentialProjectAttsSet.stream().toList(), newOp);
+                }
+            }
+
+
+            buildUp.add(new OpAtts(newOp, opAttributes));
         }
     }
 
@@ -195,25 +218,30 @@ public class Optimiser implements PlanVisitor {
                         //found the scan with that attribute
                         Operator newOp = addSelect(select, op);
 
+                        //remove predAtt from list
+                        predAtts.remove(selectAttribute);
 
                         //TODO:
                         //check if want a project above this
                         // attsInSubTree:  opAttributes
-                        // global atts:    attsSet
+                        // global atts:    predAtts
                         if (topProject) {
-                            List<Attribute> potentialProjectAtts = new ArrayList<>();
+                            //List<Attribute> potentialProjectAtts = new ArrayList<>();
+                            //add attributes in predicates
+                            Set<Attribute> potentialProjectAttsSet = new HashSet<>();
                             for (var attST : opAttributes) {
-                                for (var attG : attsSet) {
+                                for (var attG : predAtts) {
                                     if (attG.getName().equals(attST.getName())) {
-                                        potentialProjectAtts.add(attST);
+                                        potentialProjectAttsSet.add(attST);
                                     }
                                 }
                             }
-                            if (potentialProjectAtts.size() < opAttributes.size()) {
+                            if (potentialProjectAttsSet.size() < opAttributes.size() && !potentialProjectAttsSet.isEmpty()) {
                                 //add the project
-                                newOp = addProject(potentialProjectAtts, newOp);
+                                newOp = addProject(potentialProjectAttsSet.stream().toList(), newOp);
                             }
                         }
+
 
                         buildUp.remove(i);
                         buildUp.add(i, new OpAtts(newOp, opAttributes));
@@ -272,22 +300,28 @@ public class Optimiser implements PlanVisitor {
                 List<Attribute> opAttributes = buildUp.get(chosenOne).getAtts();
                 buildUp.remove(chosenOne);
 
+                //remove predAtt from list
+                predAtts.remove(chosenSelect.getPredicate().getLeftAttribute());
+                predAtts.remove(chosenSelect.getPredicate().getRightAttribute());
+
                 //TODO:
                 //check if want a project above this
                 // attsInSubTree:  opAttributes
-                // global atts:    attsSet
+                // global atts:    predAtts
                 if (topProject) {
-                    List<Attribute> potentialProjectAtts = new ArrayList<>();
+                    //List<Attribute> potentialProjectAtts = new ArrayList<>();
+                    //add attributes in predicates
+                    Set<Attribute> potentialProjectAttsSet = new HashSet<>();
                     for (var attST : opAttributes) {
-                        for (var attG : attsSet) {
+                        for (var attG : predAtts) {
                             if (attG.getName().equals(attST.getName())) {
-                                potentialProjectAtts.add(attST);
+                                potentialProjectAttsSet.add(attST);
                             }
                         }
                     }
-                    if (potentialProjectAtts.size() < opAttributes.size()) {
+                    if (potentialProjectAttsSet.size() < opAttributes.size() && !potentialProjectAttsSet.isEmpty()) {
                         //add the project
-                        newOp = addProject(potentialProjectAtts, newOp);
+                        newOp = addProject(potentialProjectAttsSet.stream().toList(), newOp);
                     }
                 }
 
@@ -301,23 +335,28 @@ public class Optimiser implements PlanVisitor {
                 buildUp.remove(chosenOne);
                 buildUp.remove(chosenTwo);
 
+                //remove predAtt from list
+                predAtts.remove(chosenSelect.getPredicate().getLeftAttribute());
+                predAtts.remove(chosenSelect.getPredicate().getRightAttribute());
 
                 //TODO:
                 //check if want a project above this
                 // attsInSubTree:  opAttributes
-                // global atts:    attsSet
+                // global atts:    predAtts
                 if (topProject) {
-                    List<Attribute> potentialProjectAtts = new ArrayList<>();
+                    //List<Attribute> potentialProjectAtts = new ArrayList<>();
+                    //add attributes in predicates
+                    Set<Attribute> potentialProjectAttsSet = new HashSet<>();
                     for (var attST : opAttributes) {
-                        for (var attG : attsSet) {
+                        for (var attG : predAtts) {
                             if (attG.getName().equals(attST.getName())) {
-                                potentialProjectAtts.add(attST);
+                                potentialProjectAttsSet.add(attST);
                             }
                         }
                     }
-                    if (potentialProjectAtts.size() < opAttributes.size()) {
+                    if (potentialProjectAttsSet.size() < opAttributes.size() && !potentialProjectAttsSet.isEmpty()) {
                         //add the project
-                        newOp = addProject(potentialProjectAtts, newOp);
+                        newOp = addProject(potentialProjectAttsSet.stream().toList(), newOp);
                     }
                 }
 
@@ -351,23 +390,26 @@ public class Optimiser implements PlanVisitor {
             List<Attribute> opAttributes = first.getAtts();
             opAttributes.addAll(second.getAtts());
 
+            //do not need to remove predAtts here as adding a product rather than a select/join
 
             //TODO:
             //check if want a project above this
             // attsInSubTree:  opAttributes
-            // global atts:    attsSet
+            // global atts:    predAtts
             if (topProject) {
-                List<Attribute> potentialProjectAtts = new ArrayList<>();
+                //List<Attribute> potentialProjectAtts = new ArrayList<>();
+                //add attributes in predicates
+                Set<Attribute> potentialProjectAttsSet = new HashSet<>();
                 for (var attST : opAttributes) {
-                    for (var attG : attsSet) {
+                    for (var attG : predAtts) {
                         if (attG.getName().equals(attST.getName())) {
-                            potentialProjectAtts.add(attST);
+                            potentialProjectAttsSet.add(attST);
                         }
                     }
                 }
-                if (potentialProjectAtts.size() < opAttributes.size()) {
+                if (potentialProjectAttsSet.size() < opAttributes.size() && !potentialProjectAttsSet.isEmpty()) {
                     //add the project
-                    newOp = addProject(potentialProjectAtts, newOp);
+                    newOp = addProject(potentialProjectAttsSet.stream().toList(), newOp);
                 }
             }
 
@@ -375,31 +417,41 @@ public class Optimiser implements PlanVisitor {
 
 
         }
+
+
         //add any last selects to the top
         while (!selectsListAtts.isEmpty()) {
             Select select = selectsListAtts.removeFirst();
             Operator newOp = addSelect(select, buildUp.getFirst().getOp());
             List<Attribute> opAttributes = buildUp.getFirst().getAtts();
 
+           
+            //remove predAtt from list
+            predAtts.remove(select.getPredicate().getLeftAttribute());
+            predAtts.remove(select.getPredicate().getRightAttribute());
 
             //TODO:
             //check if want a project above this
             // attsInSubTree:  opAttributes
-            // global atts:    attsSet
+            // global atts:    predAtts
             if (topProject) {
-                List<Attribute> potentialProjectAtts = new ArrayList<>();
+                //List<Attribute> potentialProjectAtts = new ArrayList<>();
+                //add attributes in predicates
+                Set<Attribute> potentialProjectAttsSet = new HashSet<>();
                 for (var attST : opAttributes) {
-                    for (var attG : attsSet) {
+                    for (var attG : predAtts) {
                         if (attG.getName().equals(attST.getName())) {
-                            potentialProjectAtts.add(attST);
+                            potentialProjectAttsSet.add(attST);
                         }
                     }
                 }
-                if (potentialProjectAtts.size() < opAttributes.size()) {
+                if (potentialProjectAttsSet.size() < opAttributes.size() && !potentialProjectAttsSet.isEmpty()) {
                     //add the project
-                    newOp = addProject(potentialProjectAtts, newOp);
+                    newOp = addProject(potentialProjectAttsSet.stream().toList(), newOp);
                 }
             }
+
+
 
             OpAtts newOpAtts = new OpAtts(newOp, opAttributes);
             buildUp.removeFirst();
@@ -495,9 +547,8 @@ public class Optimiser implements PlanVisitor {
         }
 
         //build new scan
-        Scan newScan = new Scan(newRelation);
 
-        return newScan;
+        return new Scan(newRelation);
     }
 
     /**
@@ -517,11 +568,7 @@ public class Optimiser implements PlanVisitor {
         }
 
         //build new select
-        Select newSelect = new Select(op, newPred);
-
-
-
-        return newSelect;
+        return new Select(op, newPred);
     }
 
     /**
@@ -547,10 +594,7 @@ public class Optimiser implements PlanVisitor {
         for (Attribute att : atts) {
             newAttributes.add(new Attribute(att));
         }
-        Project project = new Project(op, newAttributes);
-
-
-        return project;
+        return new Project(op, newAttributes);
     }
 
     /**
@@ -561,12 +605,8 @@ public class Optimiser implements PlanVisitor {
      * @return new join
      */
     public Operator addJoin(Operator left, Operator right, Predicate pred) {
-        Predicate newPred;
-        if(pred.equalsValue()){
-            newPred = new Predicate(new Attribute(pred.getLeftAttribute()), pred.getRightValue());
-        } else {
-            newPred = new Predicate(new Attribute(pred.getLeftAttribute()), new Attribute(pred.getRightAttribute()));
-        }
+
+        Predicate newPred = new Predicate(new Attribute(pred.getLeftAttribute()), new Attribute(pred.getRightAttribute()));
 
         return new Join(left,right,newPred);
     }
@@ -610,9 +650,6 @@ public class Optimiser implements PlanVisitor {
             this.atts = atts;
         }
 
-        public void setOp(Operator op) {
-            this.op = op;
-        }
 
         public Operator getOp() {
             return op;
