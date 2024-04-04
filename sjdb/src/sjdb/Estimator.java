@@ -36,8 +36,8 @@ public class Estimator implements PlanVisitor {
 		op.setOutput(output);
 
 
-		System.out.println("Scan cost: " + output.getTupleCount());
-		System.out.println("Total cost: " + cost);
+		//System.out.println("Scan cost: " + output.getTupleCount());
+		//System.out.println("Total cost: " + cost);
 	}
 
 	public void visit(Project op) {
@@ -64,8 +64,8 @@ public class Estimator implements PlanVisitor {
 		cost += output.getTupleCount();
 		op.setOutput(output);
 
-		System.out.println("Project cost: " + output.getTupleCount());
-		System.out.println("Total cost: " + cost);
+		//System.out.println("Project cost: " + output.getTupleCount());
+		//System.out.println("Total cost: " + cost);
 	}
 	
 	public void visit(Select op) {
@@ -126,8 +126,8 @@ public class Estimator implements PlanVisitor {
 
 		op.setOutput(output);
 
-		System.out.println("Select cost: " + output.getTupleCount());
-		System.out.println("Total cost: " + cost);
+		//System.out.println("Select cost: " + output.getTupleCount());
+		//System.out.println("Total cost: " + cost);
 	}
 	
 	public void visit(Product op) {
@@ -151,8 +151,8 @@ public class Estimator implements PlanVisitor {
 
 		cost += output.getTupleCount();
 
-		System.out.println("Product cost: " + output.getTupleCount());
-		System.out.println("Total cost: " + cost);
+		//System.out.println("Product cost: " + output.getTupleCount());
+		//System.out.println("Total cost: " + cost);
 
 	}
 	
@@ -213,8 +213,8 @@ public class Estimator implements PlanVisitor {
 
 		cost += output2.getTupleCount();
 
-		System.out.println("Join cost: " + output2.getTupleCount());
-		System.out.println("Total cost: " + cost);
+		//System.out.println("Join cost: " + output2.getTupleCount());
+		//System.out.println("Total cost: " + cost);
 
 	}
 }

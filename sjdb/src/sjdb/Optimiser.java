@@ -145,7 +145,8 @@ public class Optimiser implements PlanVisitor {
     public void setUpBuildUpLeaves() {
         for (Scan scan : scanList ) {
 
-            List<Attribute> opAttributes = scan.getRelation().getAttributes();
+            List<Attribute> opAttributes = new ArrayList<>();
+            opAttributes.addAll(scan.getRelation().getAttributes());
             Operator newOp = buildNewScan(scan);
 
             //do not need to remove predAtts here as only adding a scan
@@ -155,9 +156,16 @@ public class Optimiser implements PlanVisitor {
             // attsInSubTree:  opAttributes
             // global atts:    predAtts
             newOp = tryAddingProject(opAttributes,newOp);
-
-
+            if (newOp instanceof Project) {
+                opAttributes = ((Project) newOp).getAttributes();
+            }
             buildUp.add(new OpAtts(newOp, opAttributes));
+        }
+
+
+        System.out.println("1. plans so far: ");
+        for (var item : buildUp) {
+            System.out.println(item.getOp() + " : " + item.getAtts());
         }
     }
 
@@ -178,7 +186,8 @@ public class Optimiser implements PlanVisitor {
 
             for (int i = 0; i < buildUp.size(); i++) {
                 Operator op = buildUp.get(i).getOp();
-                List<Attribute> opAttributes = buildUp.get(i).getAtts();
+                List<Attribute> opAttributes = new ArrayList<>();
+                opAttributes.addAll(buildUp.get(i).getAtts());
                 for (Attribute scanAtt : opAttributes) {
                     if (scanAtt.getName().equals(selectAttribute.getName())) {
 
@@ -186,13 +195,13 @@ public class Optimiser implements PlanVisitor {
                         Operator newOp = addSelect(select, op);
 
                         //remove predAtt from list
-                        System.out.println("1");
-                        System.out.println(predAtts);
                         predAtts.remove(selectAttribute);
-                        System.out.println(predAtts);
 
                         //check if you want a project above this
                         newOp = tryAddingProject(opAttributes,newOp);
+                        if (newOp instanceof Project) {
+                            opAttributes = ((Project) newOp).getAttributes();
+                        }
 
                         buildUp.remove(i);
                         buildUp.add(i, new OpAtts(newOp, opAttributes));
@@ -204,7 +213,10 @@ public class Optimiser implements PlanVisitor {
                 if (completedSelect) break;
             }
         }
-
+        System.out.println("2. plans so far: ");
+        for (var item : buildUp) {
+            System.out.println(item.getOp() + " : " + item.getAtts());
+        }
 
 
         //Introduce the select(attr=att) by adding joins (select+product).
@@ -244,27 +256,31 @@ public class Optimiser implements PlanVisitor {
                 }
             }
 
+            System.out.println("New Op: " + newOp);
             //acc add the chosen select as either a select or join
             selectsListAtts.remove(chosenSelect);
             if (chosenOne==chosenTwo) {
-                List<Attribute> opAttributes = buildUp.get(chosenOne).getAtts();
+                List<Attribute> opAttributes = new ArrayList<>();
+                opAttributes.addAll(buildUp.get(chosenOne).getAtts());
+
                 buildUp.remove(chosenOne);
 
                 //remove predAtt from list
-                System.out.println("2");
-                System.out.println(predAtts);
                 predAtts.remove(chosenSelect.getPredicate().getLeftAttribute());
-                System.out.println(predAtts);
                 predAtts.remove(chosenSelect.getPredicate().getRightAttribute());
-                System.out.println(predAtts);
 
                 //check if want a project above this
                 newOp = tryAddingProject(opAttributes,newOp);
+                if (newOp instanceof Project) {
+                    opAttributes = ((Project) newOp).getAttributes();
+                }
 
                 buildUp.add(new OpAtts(newOp, opAttributes));
 
             } else {
-                List<Attribute> opAttributes = buildUp.get(chosenOne).getAtts();
+
+                List<Attribute> opAttributes = new ArrayList<Attribute>();
+                opAttributes.addAll(buildUp.get(chosenOne).getAtts());
                 opAttributes.addAll(buildUp.get(chosenTwo).getAtts());
 
                 //removal via index, must do the larger one first
@@ -276,30 +292,31 @@ public class Optimiser implements PlanVisitor {
                     buildUp.remove(chosenOne);
                 }
 
-
                 //remove predAtt from list
-                System.out.println("3");
-                System.out.println(predAtts);
                 predAtts.remove(chosenSelect.getPredicate().getLeftAttribute());
-                System.out.println(predAtts);
                 predAtts.remove(chosenSelect.getPredicate().getRightAttribute());
-                System.out.println(predAtts);
 
                 //check if want a project above this
                 newOp = tryAddingProject(opAttributes,newOp);
+                if (newOp instanceof Project) {
+                    opAttributes = ((Project) newOp).getAttributes();
+                }
 
                 buildUp.add(new OpAtts(newOp, opAttributes));
             }
         }
+        System.out.println("3. plans so far: ");
+        for (var item : buildUp) {
+            System.out.println(item.getOp() + " : " + item.getAtts());
+        }
 
 
-
-        //if (selectsListAtts.isEmpty()) {
-        //    System.out.println("Used all select attr=attr");
-        //}
-        //if (!(buildUp.size() > 1)) {
-        //    System.out.println("one plan in list left");
-        //}
+        if (selectsListAtts.isEmpty()) {
+            System.out.println("Used all select attr=attr");
+        }
+        if (!(buildUp.size() > 1)) {
+            System.out.println("one plan in list left");
+        }
 
 
 
@@ -313,40 +330,50 @@ public class Optimiser implements PlanVisitor {
             OpAtts second = buildUp.get(secondIndex);
             buildUp.remove(secondIndex);
             Operator newOp = addProduct(first.getOp(), second.getOp());
-            List<Attribute> opAttributes = first.getAtts();
+            List<Attribute> opAttributes = new ArrayList<>();
+            opAttributes.addAll(first.getAtts());
             opAttributes.addAll(second.getAtts());
 
             //do not need to remove predAtts here as adding a product rather than a select/join
             //check if want a project above this
             newOp = tryAddingProject(opAttributes,newOp);
+            if (newOp instanceof Project) {
+                opAttributes = ((Project) newOp).getAttributes();
+            }
 
             buildUp.add(new OpAtts(newOp, opAttributes));
         }
-
+        System.out.println("4. plans so far: ");
+        for (var item : buildUp) {
+            System.out.println(item.getOp() + " : " + item.getAtts());
+        }
 
         //Sequentially add any last select(attr=attr) to the top.
         //Check if a project can be added after each one, and remove attributes from checking list
         while (!selectsListAtts.isEmpty()) {
             Select select = selectsListAtts.removeFirst();
             Operator newOp = addSelect(select, buildUp.getFirst().getOp());
-            List<Attribute> opAttributes = buildUp.getFirst().getAtts();
+            List<Attribute> opAttributes = new ArrayList<>();
+            opAttributes.addAll(buildUp.getFirst().getAtts());
 
             //try remove predAtt from list
-            System.out.println("4");
-            System.out.println(predAtts);
             predAtts.remove(select.getPredicate().getLeftAttribute());
-            System.out.println(predAtts);
             predAtts.remove(select.getPredicate().getRightAttribute());
-            System.out.println(predAtts);
 
             //check if want a project above this
             newOp = tryAddingProject(opAttributes,newOp);
+            if (newOp instanceof Project) {
+                opAttributes = ((Project) newOp).getAttributes();
+            }
 
             OpAtts newOpAtts = new OpAtts(newOp, opAttributes);
             buildUp.removeFirst();
             buildUp.add(newOpAtts);
         }
-
+        System.out.println("5. plans so far: ");
+        for (var item : buildUp) {
+            System.out.println(item.getOp() + " : " + item.getAtts());
+        }
 
         //set newPlan
         newPlan = buildUp.getFirst().getOp();
@@ -549,5 +576,6 @@ public class Optimiser implements PlanVisitor {
         public List<Attribute> getAtts() {
             return atts;
         }
+
     }
 }

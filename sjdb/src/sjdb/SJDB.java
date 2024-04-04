@@ -29,7 +29,7 @@ public class SJDB {
 
 
 
-		Operator plan = testPlan2();
+		Operator plan = makeCanonicalPlan();
 
 		Estimator est = new Estimator();
 		Inspector ins = new Inspector();
