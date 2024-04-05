@@ -57,7 +57,7 @@ public class Optimiser implements PlanVisitor {
     /**
      * Estimator used to evaluate best join ordering
      */
-    Estimator estimator;
+    Estimator estimator = new Estimator();
 
 
     /**
@@ -78,8 +78,6 @@ public class Optimiser implements PlanVisitor {
      */
     public Operator optimise(Operator plan) {
 
-        estimator = new Estimator();
-
         canonicalPlan = plan;
 
         //constructs a list of all operators, selects(att=val), selects(att=att), scans, predicates, and attributes in predicates
@@ -98,9 +96,24 @@ public class Optimiser implements PlanVisitor {
         //Optimise the whole plan
         getOptimisedPlan();
 
-        System.out.println(newPlan);
+        //System.out.println(newPlan);
 
-        return newPlan;
+        //choose the least cost plan between new and original
+        Estimator est = new Estimator();
+        canonicalPlan.accept(est);
+        int costOG = est.cost;
+        est = new Estimator();
+        newPlan.accept(est);
+        int costNW = est.cost;
+
+
+        if (costOG < costNW) {
+            //System.out.println("Original plan was better");
+            return canonicalPlan;
+        } else {
+            return newPlan;
+        }
+
     }
 
     /**
@@ -151,7 +164,6 @@ public class Optimiser implements PlanVisitor {
 
             //do not need to remove predAtts here as only adding a scan
 
-            //TODO:
             //check if want a project above this
             // attsInSubTree:  opAttributes
             // global atts:    predAtts
@@ -163,10 +175,10 @@ public class Optimiser implements PlanVisitor {
         }
 
 
-        System.out.println("1. plans so far: ");
+        /*System.out.println("1. plans so far: ");
         for (var item : buildUp) {
             System.out.println(item.getOp() + " : " + item.getAtts());
-        }
+        }*/
     }
 
     /**
@@ -213,10 +225,10 @@ public class Optimiser implements PlanVisitor {
                 if (completedSelect) break;
             }
         }
-        System.out.println("2. plans so far: ");
+        /*System.out.println("2. plans so far: ");
         for (var item : buildUp) {
             System.out.println(item.getOp() + " : " + item.getAtts());
-        }
+        }*/
 
 
         //Introduce the select(attr=att) by adding joins (select+product).
@@ -256,7 +268,6 @@ public class Optimiser implements PlanVisitor {
                 }
             }
 
-            System.out.println("New Op: " + newOp);
             //acc add the chosen select as either a select or join
             selectsListAtts.remove(chosenSelect);
             if (chosenOne==chosenTwo) {
@@ -305,19 +316,10 @@ public class Optimiser implements PlanVisitor {
                 buildUp.add(new OpAtts(newOp, opAttributes));
             }
         }
-        System.out.println("3. plans so far: ");
+        /*System.out.println("3. plans so far: ");
         for (var item : buildUp) {
             System.out.println(item.getOp() + " : " + item.getAtts());
-        }
-
-
-        if (selectsListAtts.isEmpty()) {
-            System.out.println("Used all select attr=attr");
-        }
-        if (!(buildUp.size() > 1)) {
-            System.out.println("one plan in list left");
-        }
-
+        }*/
 
 
         //Join any last subtrees in the buildUp list by a product until only one tree left. Add the smallest subtrees together first.
@@ -343,10 +345,10 @@ public class Optimiser implements PlanVisitor {
 
             buildUp.add(new OpAtts(newOp, opAttributes));
         }
-        System.out.println("4. plans so far: ");
+        /*System.out.println("4. plans so far: ");
         for (var item : buildUp) {
             System.out.println(item.getOp() + " : " + item.getAtts());
-        }
+        }*/
 
         //Sequentially add any last select(attr=attr) to the top.
         //Check if a project can be added after each one, and remove attributes from checking list
@@ -370,10 +372,10 @@ public class Optimiser implements PlanVisitor {
             buildUp.removeFirst();
             buildUp.add(newOpAtts);
         }
-        System.out.println("5. plans so far: ");
+        /*System.out.println("5. plans so far: ");
         for (var item : buildUp) {
             System.out.println(item.getOp() + " : " + item.getAtts());
-        }
+        }*/
 
         //set newPlan
         newPlan = buildUp.getFirst().getOp();
@@ -389,7 +391,6 @@ public class Optimiser implements PlanVisitor {
      */
     public Operator tryAddingProject(List<Attribute> opAttributes, Operator newOp) {
 
-        //TODO:
         if (topProject) {
             //List<Attribute> potentialProjectAtts = new ArrayList<>();
             //add attributes in predicates
